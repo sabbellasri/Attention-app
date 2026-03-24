@@ -1,0 +1,367 @@
+{
+  "version": "2026-03-23",
+  "lesson": {
+    "title": "Attention Mechanism: The Math Behind Transformers",
+    "description": "Learn the fundamental math behind attention mechanisms from scratch with interactive visualizations. Understand Q, K, V matrices, dot-product attention, and softmax step by step.",
+    "sentenceExample": "The model helps you upskill in tech",
+    "objectives": [
+      "Understand Q, K, V projections",
+      "Compute scaled dot-product attention",
+      "Interpret attention heatmaps",
+      "Compare sinusoidal encoding and RoPE",
+      "Apply causal masking",
+      "Analyze GQA efficiency"
+    ],
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      },
+      {
+        "title": "The Illustrated Transformer",
+        "url": "https://jalammar.github.io/illustrated-transformer/"
+      },
+      {
+        "title": "RoFormer: Rotary Position Embedding",
+        "url": "https://arxiv.org/abs/2104.09864"
+      },
+      {
+        "title": "GQA: Grouped-Query Attention",
+        "url": "https://arxiv.org/abs/2305.13245"
+      }
+    ]
+  },
+  "defaults": {
+    "step": 1,
+    "advanced": {
+      "headCount": 8,
+      "position": 6,
+      "ropeTheta": 10000,
+      "causalMask": true,
+      "groupFactor": 8,
+      "seqLen": 1024,
+      "headDim": 128
+    },
+    "exampleScores": [1.29, 0.81, 0.95, 1.11, 1.05, 1.02],
+    "exampleSoftmaxPercent": [20.2, 12.5, 14.4, 17.0, 15.9, 20.0],
+    "exampleOutput": [0.82, 0.73, 0.76, 0.74]
+  },
+  "steps": [
+    {
+      "id": 1,
+      "title": "Step 1: Tokenization",
+      "body": "Split the sentence into tokens. We use: \"The model helps you upskill in tech\" and map each token to labels Model[0]..Model[5].",
+      "focus": "Input preprocessing",
+      "whatHappens": "The input sentence is segmented into ordered tokens. Each token receives a stable position index and readable label.",
+      "howGenerated": "Tokens are parsed from the user sentence, cleaned, and indexed in order. The app uses these indexes for all downstream matrices and heatmaps.",
+      "whyItMatters": "If token boundaries are wrong, every downstream score is wrong. Attention only works well when token sequence and order are correct.",
+      "formulas": ["x = [t0, t1, ... t(n-1)]"],
+      "keyTerms": ["token", "sequence length n", "position index"],
+      "misconceptions": [
+        "Tokenization is not always word-level in real LLMs.",
+        "Changing punctuation can change token count and attention patterns."
+      ],
+      "aiTutorPrompts": [
+        "Show how this sentence would tokenize differently with subword tokenization.",
+        "Explain why token boundaries influence attention quality."
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Step 2: Embedding Lookup",
+      "body": "Each token becomes a dense vector. Think of each dimension as a learned feature: meaning, role, and context clues.",
+      "focus": "Dense representations",
+      "whatHappens": "Each token index maps to a dense vector in embedding space.",
+      "howGenerated": "The app deterministically creates embedding vectors per token so learners can see stable, reproducible behavior while editing text.",
+      "whyItMatters": "Embeddings replace sparse one-hot vectors with compact dense vectors that are efficient and semantically useful.",
+      "formulas": ["X in R^(n x d_model)"],
+      "keyTerms": ["embedding matrix", "d_model", "semantic geometry"],
+      "misconceptions": [
+        "Embedding dimensions are not directly human-readable features.",
+        "Similar vectors mean statistical similarity, not perfect semantic identity."
+      ],
+      "aiTutorPrompts": [
+        "Explain static versus contextual embeddings.",
+        "Why are dense vectors better than one-hot vectors?"
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Step 3: Create Q, K, V",
+      "body": "Project embeddings into Query, Key, and Value spaces using learned matrices W_Q, W_K, W_V.",
+      "focus": "Linear projections",
+      "whatHappens": "Embeddings are linearly projected into Query, Key, and Value matrices.",
+      "howGenerated": "For each token matrix X, the app computes Q = XW_Q, K = XW_K, and V = XW_V with deterministic projection matrices.",
+      "whyItMatters": "Q asks what information is needed, K represents what each token offers, and V carries the content to aggregate.",
+      "formulas": ["Q = XW_Q", "K = XW_K", "V = XW_V"],
+      "keyTerms": ["projection", "W_Q W_K W_V", "representation subspace"],
+      "misconceptions": [
+        "Q K V are not separate token sets; they are different views of the same tokens.",
+        "These matrices are learned during training in real models."
+      ],
+      "aiTutorPrompts": [
+        "Give intuition for why we need three projections instead of one.",
+        "How does multi-head attention alter these projections?"
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Step 4: Dot Product Scores",
+      "body": "Compare one query against all keys with dot products. Preloaded educational scores are 1.29, 0.81, 0.95, 1.11, 1.05, 1.02.",
+      "focus": "Similarity scoring",
+      "whatHappens": "Each query vector is compared against all key vectors using a dot product.",
+      "howGenerated": "The app computes score matrix S_raw = QK^T, then the selected query row is shown in detail.",
+      "whyItMatters": "Dot product similarity decides which tokens are relevant for each query token.",
+      "formulas": ["S_raw = QK^T", "s(i,j) = q_i dot k_j"],
+      "keyTerms": ["similarity", "score matrix", "query-key alignment"],
+      "misconceptions": [
+        "Large score means stronger relevance, not guaranteed causal influence.",
+        "Negative scores are valid and common before softmax."
+      ],
+      "aiTutorPrompts": [
+        "How does cosine similarity differ from dot-product similarity here?",
+        "Why can two semantically related tokens still get low score?"
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Step 5: Scale by sqrt(d)",
+      "body": "Stabilize gradients by dividing scores by sqrt(d). This prevents very peaky softmax at larger dimensions.",
+      "focus": "Numerical stabilization",
+      "whatHappens": "Raw scores are divided by sqrt(d_k).",
+      "howGenerated": "Scaled matrix is computed as S = S_raw / sqrt(d_k) before softmax.",
+      "whyItMatters": "Without scaling, logits grow with dimension and softmax can saturate too early, harming training dynamics.",
+      "formulas": ["S = QK^T / sqrt(d_k)"],
+      "keyTerms": ["d_k", "logit scale", "softmax saturation"],
+      "misconceptions": [
+        "Scaling changes distribution sharpness, not just absolute numbers.",
+        "Scaling is a standard part of transformer attention."
+      ],
+      "aiTutorPrompts": [
+        "Show what happens to softmax if scaling is removed.",
+        "Relate scaling to gradient health during training."
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Step 6: Softmax Weights",
+      "body": "Convert scores into probabilities. Preloaded percentages are 20.2%, 12.5%, 14.4%, 17.0%, 15.9%, 20.0%.",
+      "focus": "Probability distribution",
+      "whatHappens": "Each row of scaled scores is normalized with softmax to produce attention weights that sum to 1.",
+      "howGenerated": "The app applies row-wise softmax to scaled scores, handling masked values as very negative logits.",
+      "whyItMatters": "Softmax converts arbitrary similarity scores into interpretable mixing coefficients for values.",
+      "formulas": ["alpha(i,j) = exp(s(i,j)) / sum_m exp(s(i,m))"],
+      "keyTerms": ["attention weights", "row normalization", "probability simplex"],
+      "misconceptions": [
+        "Softmax does not mean certainty; it normalizes relative scores.",
+        "A token can attend to itself and others at the same time."
+      ],
+      "aiTutorPrompts": [
+        "Why do attention rows sum to 1?",
+        "How does masking alter softmax output?"
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Step 7: Weighted Sum of V",
+      "body": "Multiply each V vector by its attention weight and add. Reference output vector: [0.82, 0.73, 0.76, 0.74].",
+      "focus": "Context aggregation",
+      "whatHappens": "Each query builds a contextual output by weighted combination of all value vectors.",
+      "howGenerated": "The app computes O = A V and surfaces the selected query output vector.",
+      "whyItMatters": "This is where the model actually gathers information from relevant tokens.",
+      "formulas": ["O = A V", "o_i = sum_j alpha(i,j) v_j"],
+      "keyTerms": ["context vector", "weighted sum", "value transport"],
+      "misconceptions": [
+        "The output vector is not one token embedding copied from somewhere.",
+        "Weights act on V, not directly on original tokens."
+      ],
+      "aiTutorPrompts": [
+        "Explain intuitively what information the output vector contains.",
+        "What happens if one attention weight dominates?"
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Step 8: Attention Heatmap (6x6)",
+      "body": "Visualize who attends to whom with a 6x6 matrix. Rows = query token, columns = key token.",
+      "focus": "Interpretability",
+      "whatHappens": "Attention weight matrix is visualized as a heatmap where intensity reflects strength.",
+      "howGenerated": "The app uses dynamic N x N weights from the current sentence and selected controls.",
+      "whyItMatters": "Heatmaps provide an intuitive view of token interaction patterns and local/global focus.",
+      "formulas": ["A in R^(n x n), A(i,j) = alpha(i,j)"],
+      "keyTerms": ["row query", "column key", "token-token interaction"],
+      "misconceptions": [
+        "Attention is not a full explanation of model behavior by itself.",
+        "Bright cells indicate weighting, not guaranteed factual grounding."
+      ],
+      "aiTutorPrompts": [
+        "Identify which tokens are globally attended most and why.",
+        "How would punctuation affect this heatmap?"
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Step 9: Formula View",
+      "body": "Attention(Q, K, V) = softmax(QK^T / sqrt(d)) * V. Q and K find matches, V carries content.",
+      "focus": "Unified equation",
+      "whatHappens": "The full attention pipeline is compacted into one matrix equation.",
+      "howGenerated": "The same equation drives all dynamic results shown in earlier steps.",
+      "whyItMatters": "A single compact expression helps learners connect all intermediate computations.",
+      "formulas": ["Attention(Q,K,V) = softmax(QK^T / sqrt(d_k)) V"],
+      "keyTerms": ["matrix form", "scaled dot-product", "forward pass"],
+      "misconceptions": [
+        "This formula applies per head in multi-head attention before head merge.",
+        "This is attention math, not the entire transformer stack."
+      ],
+      "aiTutorPrompts": [
+        "Expand the compact formula into step-by-step operations.",
+        "Map each term to one visualization in this app."
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Step 10: Full Flow Animation",
+      "body": "Animate end-to-end path: tokenize -> embed -> QKV -> positional -> mask -> multi-head -> softmax -> output.",
+      "focus": "System-level view",
+      "whatHappens": "An animation links all computation blocks into one forward pipeline.",
+      "howGenerated": "Each node corresponds to data derived from the current user sentence and control settings.",
+      "whyItMatters": "Learners can shift from isolated formulas to a full operational mental model.",
+      "formulas": ["x -> X -> Q K V -> scores -> softmax -> output"],
+      "keyTerms": ["pipeline", "dataflow", "compositional computation"],
+      "misconceptions": [
+        "The flow is parallelizable in matrix form even if shown as sequential blocks.",
+        "Real transformers include residual and normalization around these blocks."
+      ],
+      "aiTutorPrompts": [
+        "Where do residual connections and layer norm fit into this pipeline?",
+        "Show equivalent pseudocode for this flow."
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Step 11: Interpretation",
+      "body": "High scores indicate relevance. Attention is dynamic: the same token can attend differently depending on query context.",
+      "focus": "Reading results",
+      "whatHappens": "Users inspect score and weight patterns to infer contextual dependencies.",
+      "howGenerated": "Interpretation is grounded in currently selected query token and computed matrices.",
+      "whyItMatters": "Interpretation turns numbers into linguistic intuition and debugging signals.",
+      "formulas": ["context_i = sum_j alpha(i,j) v_j"],
+      "keyTerms": ["context sensitivity", "query-conditioned relevance", "distribution sharpness"],
+      "misconceptions": [
+        "Attention does not always align with human syntax intuitions.",
+        "One head alone is not the full story in multi-head models."
+      ],
+      "aiTutorPrompts": [
+        "Explain this row of attention weights in plain language.",
+        "How can interpretation differ across heads for the same token?"
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Step 12: TL;DR",
+      "body": "Q and K find matches (who should attend to whom), V provides the content to gather. Stack this with multi-head blocks, and you get a transformer.",
+      "focus": "Compression",
+      "whatHappens": "The complete mechanism is summarized into an operational memory hook.",
+      "howGenerated": "Summary is tied to the same dynamic computations learners just explored.",
+      "whyItMatters": "A concise mental model improves retention and transfer to advanced topics.",
+      "formulas": ["match with QK, mix with V"],
+      "keyTerms": ["matching", "mixing", "contextualization"],
+      "misconceptions": [
+        "Transformer quality depends on more than attention: MLP, residual, norm, training data, and scale."
+      ],
+      "aiTutorPrompts": [
+        "Give me a one-minute intuition recap for Q K V.",
+        "What should I remember before learning multi-head attention?"
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Step 13: Multi-Head Attention",
+      "body": "Run 8 heads in parallel, inspect per-head heatmaps, toggle heads on/off, then concatenate and project into one output.",
+      "focus": "Parallel subspaces",
+      "whatHappens": "Multiple heads compute attention in parallel using different projections and then merge outputs.",
+      "howGenerated": "The app computes per-head maps from head-specific Q K V projections and combines active heads with output projection.",
+      "whyItMatters": "Different heads can capture different patterns such as locality, syntax, or long-range dependencies.",
+      "formulas": [
+        "head_h = Attention(Q_h, K_h, V_h)",
+        "MHA(X) = Concat(head_1 ... head_H) W_O"
+      ],
+      "keyTerms": ["head specialization", "concatenation", "output projection W_O"],
+      "misconceptions": [
+        "Heads are not guaranteed to be interpretable or unique.",
+        "More heads do not always imply better quality."
+      ],
+      "aiTutorPrompts": [
+        "Compare two head heatmaps and explain likely roles.",
+        "How does head dropout affect robustness?"
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Step 14: Positional Encoding",
+      "body": "Compare sinusoidal encoding versus RoPE. Move sliders to see how position updates Q dot K behavior and relative geometry.",
+      "focus": "Order information",
+      "whatHappens": "Position information is injected so attention can reason about order and relative distance.",
+      "howGenerated": "The app shows sinusoidal vectors and RoPE-based vector rotations as position and theta change.",
+      "whyItMatters": "Attention alone is permutation-invariant; positional information is required to model sequence order.",
+      "formulas": [
+        "PE(pos,2i)=sin(pos/10000^(2i/d))",
+        "PE(pos,2i+1)=cos(pos/10000^(2i/d))",
+        "RoPE(x,p)=R(theta,p)x"
+      ],
+      "keyTerms": ["sinusoidal encoding", "rotary embedding", "relative position"],
+      "misconceptions": [
+        "RoPE does not simply add vectors; it rotates vector pairs.",
+        "Position method choice can affect long-context behavior."
+      ],
+      "aiTutorPrompts": [
+        "Why can RoPE help with relative position awareness?",
+        "Compare additive PE versus rotary PE mathematically."
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Step 15: Masking & Causal Attention",
+      "body": "Apply triangular mask so future tokens become -inf before softmax. This reproduces decoder-only autoregressive behavior.",
+      "focus": "Autoregressive constraint",
+      "whatHappens": "Future positions are masked before softmax so token i cannot attend to tokens j greater than i.",
+      "howGenerated": "The app applies upper-triangular negative infinity masking to scaled scores and recomputes row-wise softmax.",
+      "whyItMatters": "Causal masking enforces left-to-right generation and prevents information leakage during next-token prediction.",
+      "formulas": [
+        "S_masked(i,j)=S(i,j) if j<=i else -inf",
+        "A = softmax(S_masked)"
+      ],
+      "keyTerms": ["causal mask", "autoregressive decoding", "leakage prevention"],
+      "misconceptions": [
+        "Masking is applied before softmax, not after.",
+        "Encoder self-attention is often unmasked in encoder-decoder models."
+      ],
+      "aiTutorPrompts": [
+        "Show how one masked row changes before and after softmax.",
+        "Why does negative infinity produce near-zero probability after softmax?"
+      ]
+    },
+    {
+      "id": 16,
+      "title": "Step 16: Efficiency Variants (GQA)",
+      "body": "Compare full multi-head KV cache vs grouped-query attention. Share KV heads by groups and visualize memory savings + block compute.",
+      "focus": "Inference efficiency",
+      "whatHappens": "Query heads are grouped so multiple query heads share fewer K V heads.",
+      "howGenerated": "The app computes KV-cache size estimates for full MHA versus GQA and visualizes tiled block-style compute intuition.",
+      "whyItMatters": "GQA reduces KV memory and bandwidth cost while preserving quality close to full multi-head in many settings.",
+      "formulas": [
+        "KV_heads_GQA = Q_heads / group_factor",
+        "memory_reduction = 1 - KV_heads_GQA / Q_heads"
+      ],
+      "keyTerms": ["KV cache", "group factor", "throughput latency tradeoff"],
+      "misconceptions": [
+        "GQA is not identical to MQA; MQA is the single-KV-head extreme.",
+        "Lower memory does not guarantee better output quality for every task."
+      ],
+      "aiTutorPrompts": [
+        "Compare MHA GQA and MQA in one table.",
+        "How does group factor affect memory and quality tradeoffs?"
+      ]
+    }
+  ]
+}
